@@ -1,0 +1,12 @@
+const api = async <T>(path: string, init?: RequestInit): Promise<T> => { const r = await fetch(path, init); if (!r.ok) throw new Error(await r.text()); return r.status === 204 ? undefined as T : r.json(); };
+export type Video = {id:string; filename:string; status:string; created_at:string};
+export type VideoMetadata = {title:string;format:string;duration:number;width:number;height:number;file_size:number};
+export type VideoDetails = Video & {metadata:VideoMetadata|null};
+export const videos = () => api<Video[]>("/videos");
+export const videoDetails = (id:string) => api<VideoDetails>(`/videos/${id}`);
+export const upload = (file:File, title:string) => { const form = new FormData(); form.append("file",file); form.append("title",title); return api<{video_id:string}>("/videos/upload",{method:"POST",body:form}); };
+export const processVideo = (id:string) => api<{job_id:string}>(`/videos/${id}/process`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+export const status = (id:string) => api<{status:string;job?:{id:string;status:string;progress:number;retries:number;error_message?:string}}>(`/videos/${id}/status`);
+export const outputs = (id:string) => api<{resolution:string;url:string;status:string}[]>(`/videos/${id}/outputs`);
+export const thumbs = (id:string) => api<{url:string;status:string}[]>(`/videos/${id}/thumbnails`);
+export const deleteVideo = (id:string) => api<void>(`/videos/${id}`, {method:"DELETE"});

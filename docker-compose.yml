@@ -1,0 +1,73 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: video_platform
+      MYSQL_USER: videoflow
+      MYSQL_PASSWORD: videoflow
+      MYSQL_ROOT_PASSWORD: root
+    # MySQL is internal to this stack; omit a host port to avoid conflicts
+    # with any locally installed MySQL service.
+    volumes: ["mysql_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  gateway:
+    build: ./backend
+    command: uvicorn services.gateway.main:app --host 0.0.0.0 --port 8000
+    environment: &platform_env
+      DATABASE_URL: mysql+pymysql://videoflow:videoflow@mysql:3306/video_platform
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      REDIS_URL: redis://redis:6379/0
+      MEDIA_ROOT: /app/media
+      LOCAL_DEMO_FALLBACK: "false"
+      FFMPEG_PRESET: ultrafast
+    ports: ["8000:8000"]
+    volumes: ["media_data:/app/media"]
+    restart: unless-stopped
+    depends_on:
+      mysql: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  transcoding-worker:
+    build: ./backend
+    command: python -m services.workers.run
+    environment: *platform_env
+    volumes: ["media_data:/app/media"]
+    depends_on:
+      gateway: {condition: service_started}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_TARGET: http://gateway:8000
+    ports: ["5173:5173"]
+    depends_on: [gateway]
+
+volumes:
+  mysql_data:
+  media_data:
